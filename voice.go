@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -131,17 +132,33 @@ func ReceivePCM(v *discordgo.VoiceConnection, c chan *discordgo.Packet) {
 		c <- p
 	}
 }
-
-// PlayAudioFile will play the given filename to the already connected
-// Discord voice server/channel.  voice websocket and udp socket
-// must already be setup before this will work.
-func PlayAudioFile(v *discordgo.VoiceConnection, filename string) {
+func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 
 	// Create a shell command "object" to run.
-	run = exec.Command("ffmpeg", "-i", filename, "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+	if strings.Contains(source, "www.youtube.com") {
+		ytdl := exec.Command("youtube-dl", "-f", "bestaudio", "-o", "-", source)
+		ytdlout, err := ytdl.StdoutPipe()
+		if err != nil {
+			fmt.Println("musicplugin: ytdl StdoutPipe err:", err)
+			return
+		}
+		ytdlbuf := bufio.NewReaderSize(ytdlout, 16384)
+		err = ytdl.Start()
+		if err != nil {
+			fmt.Println("Ytdl Error:", err)
+			return
+		}
+
+		run = exec.Command("ffmpeg", "-i", "pipe:0", "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+		run.Stdin = ytdlbuf
+
+	} else {
+		run = exec.Command("ffmpeg", "-i", source, "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+	}
+
 	ffmpegout, err := run.StdoutPipe()
 	if err != nil {
-		fmt.Println("StdoutPipe Error:", err)
+		fmt.Println("FFmpeg StdoutPipe Error:", err)
 		return
 	}
 
@@ -150,7 +167,7 @@ func PlayAudioFile(v *discordgo.VoiceConnection, filename string) {
 	// Starts the ffmpeg command
 	err = run.Start()
 	if err != nil {
-		fmt.Println("RunStart Error:", err)
+		fmt.Println("FFmpeg Error:", err)
 		return
 	} else {
 		hasrun = true

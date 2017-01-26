@@ -10,9 +10,11 @@ import (
 )
 
 var (
-	sourcePath string
-	configPath string
-	configText []byte = []byte("{\n\t\"CommandKey\": \"$\",\n\t\"CommandChannelID\": \"\",\n \n\t\"ListMessageID\": \"\"\n}")
+	workDir     string
+	sourcePath  string
+	configPath  string
+	configText  []byte = []byte("{\n\t\"CommandKey\": \"$\",\n\t\"CommandChannelID\": \"\",\n \n\t\"ListMessageID\": \"\"\n}")
+	adminRoleID string
 )
 
 type Configuration struct {
@@ -33,7 +35,7 @@ func authenticate(s *discordgo.Session, g string, u *discordgo.User) bool {
 		return false
 	}
 	for _, ar := range roles {
-		if ar.Name == "Admin" {
+		if ar.Permissions == 8 {
 			adminRoleID = ar.ID
 		}
 	}
@@ -44,16 +46,17 @@ func authenticate(s *discordgo.Session, g string, u *discordgo.User) bool {
 			}
 		}
 	} else {
-		log.Println("No role by name of \"Admin\", Things might not go so well :/")
+		log.Println("Make sure admins only have the permission \"Administrator,\" they override other permissions anyway. ;)")
 		return false
 	}
 	return false
 }
-func config(g *discordgo.Guild) {
-	configPath = strings.ToLower(strings.Replace("radiobot/"+g.Name, " ", "", -1)) + "/config.json"
-	sourcePath = strings.ToLower(strings.Replace("radiobot/"+g.Name, " ", "", -1)) + "/sources.txt"
+func config(g *discordgo.Guild, s *discordgo.Session) {
+	workDir = strings.ToLower(strings.Replace(s.State.User.Username+"/"+g.Name, " ", "", -1))
+	configPath = workDir + "/config.json"
+	sourcePath = workDir + "/sources.txt"
 	if _, e := os.Stat(configPath); os.IsNotExist(e) {
-		os.MkdirAll(strings.ToLower(strings.Replace("radiobot/"+g.Name, " ", "", -1)), os.ModePerm)
+		os.MkdirAll((workDir), os.ModePerm)
 		log.Println("No working directory found, creating one.")
 	}
 	if _, e := os.Stat(configPath); os.IsNotExist(e) {
@@ -65,7 +68,6 @@ func config(g *discordgo.Guild) {
 		os.Create(sourcePath)
 		log.Println("No '" + sourcePath + "' file found, creating one.")
 	}
-
 	configFile, _ := os.Open(configPath)
 	decoder := json.NewDecoder(configFile)
 	cfg = Configuration{}
@@ -74,8 +76,8 @@ func config(g *discordgo.Guild) {
 		return
 	}
 }
-func isConfigured(g *discordgo.Guild) bool {
-	config(g)
+func isConfigured(g *discordgo.Guild, s *discordgo.Session) bool {
+	config(g, s)
 	if cfg.CommandChannelID == "" || cfg.ListMessageID == "" {
 		return false
 	}
