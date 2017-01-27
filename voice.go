@@ -24,10 +24,10 @@ const (
 var (
 	speakers    map[uint32]*gopus.Decoder
 	opusEncoder *gopus.Encoder
-	run         *exec.Cmd
 	sendpcm     bool
 	recvpcm     bool
-	hasrun      bool
+	ffmpeg      *exec.Cmd
+	running     bool
 	recv        chan *discordgo.Packet
 	send        chan []int16
 	mu          sync.Mutex
@@ -135,8 +135,8 @@ func ReceivePCM(v *discordgo.VoiceConnection, c chan *discordgo.Packet) {
 func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 
 	// Create a shell command "object" to run.
-	if strings.Contains(source, "www.youtube.com") {
-		ytdl := exec.Command("youtube-dl", "-f", "bestaudio", "-o", "-", source)
+	if strings.Contains(source, "youtu") {
+		ytdl := exec.Command("youtube-dl", "--no-cache-dir", "-f", "bestaudio", "-o", "-", source)
 		ytdlout, err := ytdl.StdoutPipe()
 		if err != nil {
 			fmt.Println("musicplugin: ytdl StdoutPipe err:", err)
@@ -149,14 +149,14 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 			return
 		}
 
-		run = exec.Command("ffmpeg", "-i", "pipe:0", "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
-		run.Stdin = ytdlbuf
+		ffmpeg = exec.Command("ffmpeg", "-i", "pipe:0", "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+		ffmpeg.Stdin = ytdlbuf
 
 	} else {
-		run = exec.Command("ffmpeg", "-i", source, "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
+		ffmpeg = exec.Command("ffmpeg", "-i", source, "-af", "volume=0.3", "-f", "s16le", "-ar", strconv.Itoa(frameRate), "-ac", strconv.Itoa(channels), "pipe:1")
 	}
 
-	ffmpegout, err := run.StdoutPipe()
+	ffmpegout, err := ffmpeg.StdoutPipe()
 	if err != nil {
 		fmt.Println("FFmpeg StdoutPipe Error:", err)
 		return
@@ -165,12 +165,12 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 	ffmpegbuf := bufio.NewReaderSize(ffmpegout, 16384)
 
 	// Starts the ffmpeg command
-	err = run.Start()
+	err = ffmpeg.Start()
 	if err != nil {
 		fmt.Println("FFmpeg Error:", err)
 		return
 	} else {
-		hasrun = true
+		running = true
 	}
 
 	// Send "speaking" packet over the voice websocket
@@ -178,6 +178,7 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 
 	// Send not "speaking" packet over the websocket when we finish
 	defer v.Speaking(false)
+	defer nextInQueue()
 
 	// will actually only spawn one instance, a bit hacky.
 	if send == nil {
@@ -203,8 +204,8 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 	}
 }
 func KillPlayer() {
-	if hasrun {
-		run.Process.Kill()
-		hasrun = false
+	if running {
+		ffmpeg.Process.Kill()
+		running = false
 	}
 }

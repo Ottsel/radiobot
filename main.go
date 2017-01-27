@@ -3,11 +3,13 @@ package main
 import (
 	"C"
 	"flag"
-	"github.com/bwmarrin/discordgo"
 	"log"
 	"strings"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
+import "strconv"
 
 var (
 	botID string
@@ -37,118 +39,108 @@ func onGuildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 		return
 	}
 	if !isConfigured(event.Guild, s) {
-		s.ChannelMessageSend(event.Guild.ID, "Not configured. Type `"+cfg.CommandKey+"config` in the channel you would like to keep commands in.")
-	} else {
-		listSources(s, event.Guild)
+		s.ChannelMessageSend(event.Guild.ID, "Not configured. Type `@"+s.State.User.Username+"#"+s.State.User.Discriminator+"` `config` in the channel you would like to keep commands in.")
+		return
 	}
+	listSources(s, event.Guild)
+	return
 }
 func messageCreate(s *discordgo.Session, mc *discordgo.MessageCreate) {
 	if !mc.Author.Bot {
-		g := getGuild(s, mc.ChannelID)
-		config(g, s)
+		for _, r := range mc.Mentions {
+			if r.Username == s.State.User.Username {
+				message := strings.Replace(mc.Content, "  ", " ", -1)
+				if !strings.Contains(message, "  ") {
 
-		/*
-		 *	Admin commands
-		 */
+					g := getGuild(s, mc.ChannelID)
+					sources := getSources(g, 0)
 
-		//Configure via Discord
-		if strings.HasPrefix(mc.Content, cfg.CommandKey+"config") {
-			if !isConfigured(g, s) {
-				//if authenticate(s, g.ID, mc.Author) {
-				m, e := s.ChannelMessageSend(mc.ChannelID, "Listing available sounds and pinning message...")
-				if err(e, "Couldn't post message: "+m.Content) {
-					return
-				}
-				writeConfig(g, mc.ChannelID, m.ID)
-				listSources(s, g)
-				e = s.ChannelMessagePin(m.ChannelID, m.ID)
-				if err(e, "") {
-					return
-				}
-				//}
-			}
-			return
-		}
-		if isConfigured(g, s) {
-			//Post a list of commands
-			if strings.HasPrefix(mc.Content, cfg.CommandKey+"help") {
-				help(s, mc)
-				return
-			}
+					config(g, s)
+					listSources(s, g)
 
-			/*
-			 *	Soundboard commands
-			 */
-
-			if strings.HasPrefix(mc.Content, cfg.CommandKey) {
-				channel, e := s.Channel(mc.ChannelID)
-				if err(e, "") {
-					return
-				}
-				if channel.ID != cfg.CommandChannelID {
-					e := s.ChannelMessageDelete(channel.ID, mc.ID)
-					if err(e, "Couldn't delete message:"+mc.Content) {
-						return
-					}
-				}
-				//Stop the player
-				if mc.Content == cfg.CommandKey+"stop" {
-					s.UpdateStatus(0, "")
-					KillPlayer()
-					return
-				}
-				//Play from source
-				if strings.HasPrefix(mc.Content, cfg.CommandKey+"play ") {
-					source := strings.Replace(mc.Content, cfg.CommandKey+"play ", "", -1)
-					playSound(s, g, mc.Author, source)
-					return
-				}
-				if strings.HasPrefix(mc.Content, cfg.CommandKey+"add ") {
-					command := strings.Replace(mc.Content, cfg.CommandKey+"add ", "", -1)
-					if strings.Count(command, " ") == 1 {
-						params := strings.Split(command, " ")
-						switch params[0] {
-						case "play":
-							s.ChannelMessageSend(mc.ChannelID, "Invalid name: "+params[0])
-							return
-						case "add":
-							s.ChannelMessageSend(mc.ChannelID, "Invalid name: "+params[0])
-							return
-						case "help":
-							s.ChannelMessageSend(mc.ChannelID, "Invalid name: "+params[0])
-							return
-						case "config":
-							s.ChannelMessageSend(mc.ChannelID, "Invalid name: "+params[0])
-							return
-						case "stop":
-							s.ChannelMessageSend(mc.ChannelID, "Invalid name: "+params[0])
-							return
-						default:
-							sources := getSources(g, 0)
-							if strings.Contains(sources, params[0]) {
-								s.ChannelMessageSend(mc.ChannelID, "A source by that name already exists.")
-								return
-							} else {
-								if addSource(g, params[0], params[1]) {
-									s.ChannelMessageSend(mc.ChannelID, ("Added source: `" + params[0] + "`"))
-									listSources(s, g)
+					params := strings.Split(message, " ")
+					switch strings.ToLower(params[1]) {
+					case "config":
+						if !isConfigured(g, s) {
+							if authenticate(s, g.ID, mc.Author) {
+								m, e := s.ChannelMessageSend(mc.ChannelID, "Listing available sources and pinning message...")
+								if err(e, "Couldn't post message: "+m.Content) {
+									return
 								}
-								return
+								writeConfig(g, mc.ChannelID, m.ID)
+								listSources(s, g)
+								e = s.ChannelMessagePin(mc.ChannelID, m.ID)
+								if err(e, "") {
+									return
+								}
 							}
 						}
-
-					} else {
-						s.ChannelMessageSend(mc.ChannelID, "Usage: "+cfg.CommandKey+"add `name` `sourceURL`")
 						return
+					case "add":
+						if len(params) == 4 && isConfigured(g, s) {
+							if strings.Contains(sources, params[2]) {
+								s.ChannelMessageSend(mc.ChannelID, "A source by the name "+params[2]+" already exists.")
+								return
+							}
+							if addSource(g, params[2], params[3]) {
+								s.ChannelMessageSend(mc.ChannelID, ("Added source: `" + params[2] + "`"))
+								return
+							}
+							s.ChannelMessageSend(mc.ChannelID, ("Failed to add source: `" + params[2] + "`"))
+							return
+						}
+						s.ChannelMessageSend(mc.ChannelID, "Usage: `@"+s.State.User.Username+"#"+s.State.User.Discriminator+"` add `name` `sourceURL`")
+						return
+					case "play":
+						if len(params) == 3 && isConfigured(g, s) {
+							if running {
+								addToQueue(s, g, mc.Author, params[2])
+								pos := strconv.Itoa(len(queue) - (queueIndex))
+								s.ChannelMessageSend(mc.ChannelID, ("You are position " + pos + " in the queue. (Use the `next` command to skip)"))
+								s.UpdateStatus(0, "from Queue")
+								return
+							}
+							s.UpdateStatus(0, "from Source")
+							playSound(s, g, mc.Author, params[2])
+							return
+						}
+						s.ChannelMessageSend(mc.ChannelID, "Usage: `@"+s.State.User.Username+"#"+s.State.User.Discriminator+"` play `sourceURL`")
+						return
+					case "next":
+						if isConfigured(g, s) {
+							nextInQueue()
+							return
+						}
+					case "stop":
+						if isConfigured(g, s) {
+							s.UpdateStatus(0, "")
+							KillPlayer()
+							return
+						}
+					case "help":
+						if isConfigured(g, s) {
+							help(s, mc)
+							return
+						}
+					default:
+						if isConfigured(g, s) {
+							source := getSourceByName(g, strings.ToLower(params[1]))
+							if source != "" {
+								s.UpdateStatus(0, strings.ToTitle(params[1]))
+								playSound(s, g, mc.Author, source)
+								return
+							}
+							s.ChannelMessageSend(mc.ChannelID, "No cached source by name of: "+strings.ToLower(params[1]))
+							return
+						}
 					}
-				}
-				name := strings.ToLower(strings.Replace(mc.Content, cfg.CommandKey, "", -1))
-				source := getSourceByName(g, name)
-				if source != "" {
-					s.UpdateStatus(0, strings.ToTitle(name))
-					playSound(s, g, mc.Author, source)
-				} else {
-					s.ChannelMessageSend(mc.ChannelID, "No cached source by name of: "+strings.ToLower(name))
+
+					if mc.ChannelID != cfg.CommandChannelID {
+						e := s.ChannelMessageDelete(mc.ChannelID, mc.ID)
+						if err(e, "Couldn't delete message:"+mc.Content) {
+							return
+						}
+					}
 				}
 			}
 		}
@@ -188,7 +180,7 @@ func listSources(s *discordgo.Session, g *discordgo.Guild) {
 	config(g, s)
 	messageText := getSources(g, 0)
 	if messageText != "" {
-		m, e := s.ChannelMessageEdit(cfg.CommandChannelID, cfg.ListMessageID, cfg.CommandKey+messageText)
+		m, e := s.ChannelMessageEdit(cfg.CommandChannelID, cfg.ListMessageID, messageText)
 		if err(e, "Couldn't edit source list message with ID: "+m.ID) {
 			return
 		} else {

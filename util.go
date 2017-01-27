@@ -2,28 +2,39 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/bwmarrin/discordgo"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 var (
-	workDir     string
-	sourcePath  string
-	configPath  string
-	configText  []byte = []byte("{\n\t\"CommandKey\": \"$\",\n\t\"CommandChannelID\": \"\",\n \n\t\"ListMessageID\": \"\"\n}")
-	adminRoleID string
+	workDir    string
+	sourcePath string
+	configPath string
+	queueIndex int
+	configText []byte = []byte("{\n\t\"CommandChannelID\": \"\",\n \n\t\"ListMessageID\": \"\"\n}")
 )
 
 type Configuration struct {
-	CommandKey       string
 	CommandChannelID string
 	ListMessageID    string
 }
 
-var cfg Configuration
+type QueueItem struct {
+	Session *discordgo.Session
+	Guild   *discordgo.Guild
+	User    *discordgo.User
+	Source  string
+}
+
+var (
+	queue []QueueItem
+	cfg   Configuration
+	item  QueueItem
+)
 
 func authenticate(s *discordgo.Session, g string, u *discordgo.User) bool {
 	user, e := s.GuildMember(g, u.ID)
@@ -36,19 +47,15 @@ func authenticate(s *discordgo.Session, g string, u *discordgo.User) bool {
 	}
 	for _, ar := range roles {
 		if ar.Permissions == 8 {
-			adminRoleID = ar.ID
-		}
-	}
-	if adminRoleID != "" {
-		for _, r := range user.Roles {
-			if r == adminRoleID {
-				return true
+			for _, r := range user.Roles {
+				if r == ar.ID {
+					return true
+				}
 			}
+			return false
 		}
-	} else {
-		log.Println("Make sure admins only have the permission \"Administrator,\" they override other permissions anyway. ;)")
-		return false
 	}
+	log.Println("Make sure admins only have the permission \"Administrator,\" they override other permissions anyway. ;)")
 	return false
 }
 func config(g *discordgo.Guild, s *discordgo.Session) {
@@ -84,7 +91,7 @@ func isConfigured(g *discordgo.Guild, s *discordgo.Session) bool {
 	return true
 }
 func writeConfig(g *discordgo.Guild, c string, m string) {
-	newConfigText := []byte("{\n\t\"CommandKey\": \"$\",\n\t\"CommandChannelID\": \"" + c + "\",\n \n\t\"ListMessageID\": \"" + m + "\"\n}")
+	newConfigText := []byte("{\n\t\"CommandChannelID\": \"" + c + "\",\n \n\t\"ListMessageID\": \"" + m + "\"\n}")
 	ioutil.WriteFile(configPath, newConfigText, os.ModePerm)
 	log.Println("Configuring Guild: " + g.Name)
 }
@@ -132,6 +139,26 @@ func getSourceByName(g *discordgo.Guild, name string) string {
 	}
 	return ""
 }
+func addToQueue(s *discordgo.Session, g *discordgo.Guild, user *discordgo.User, source string) {
+	item.Session = s
+	item.Guild = g
+	item.User = user
+	item.Source = source
+	queue = append(queue, item)
+	return
+}
+func nextInQueue() {
+	if len(queue)-queueIndex >= 1 {
+		q := queue[queueIndex]
+		playSound(q.Session, q.Guild, q.User, q.Source)
+		queueIndex++
+		return
+	}
+	queueIndex = 0
+	queue = queue[:0]
+	item.Session.UpdateStatus(0, "")
+	return
+}
 func getGuild(s *discordgo.Session, c string) *discordgo.Guild {
 	channel, e := s.State.Channel(c)
 	if err(e, "") {
@@ -155,19 +182,23 @@ func err(e error, c string) bool {
 	}
 }
 func help(s *discordgo.Session, mc *discordgo.MessageCreate) {
-	m, e := s.ChannelMessageSend(mc.ChannelID, (cfg.CommandKey + "help - Shows this dialog."))
+	m, e := s.ChannelMessageSend(mc.ChannelID, ("`@" + s.State.User.Username + "#" + s.State.User.Discriminator + "` help - Shows this dialog."))
 	if err(e, "Couldn't post message: "+m.Content) {
 		return
 	}
-	m, e = s.ChannelMessageSend(mc.ChannelID, (cfg.CommandKey + "stop - Stops all audio."))
+	m, e = s.ChannelMessageSend(mc.ChannelID, ("`@" + s.State.User.Username + "#" + s.State.User.Discriminator + "` play `sourceURL` - Streams/queues audio from specified url."))
 	if err(e, "Couldn't post message: "+m.Content) {
 		return
 	}
-	m, e = s.ChannelMessageSend(mc.ChannelID, (cfg.CommandKey + "play `sourceURL` - Streams audio from specified url."))
+	m, e = s.ChannelMessageSend(mc.ChannelID, ("`@" + s.State.User.Username + "#" + s.State.User.Discriminator + "` add `name` `sourceURL` - Saves a source for easy playback."))
 	if err(e, "Couldn't post message: "+m.Content) {
 		return
 	}
-	m, e = s.ChannelMessageSend(mc.ChannelID, (cfg.CommandKey + "add `name` `sourceURL` - Saves a source for easy playback."))
+	m, e = s.ChannelMessageSend(mc.ChannelID, ("`@" + s.State.User.Username + "#" + s.State.User.Discriminator + "` next - Skips to next in queue."))
+	if err(e, "Couldn't post message: "+m.Content) {
+		return
+	}
+	m, e = s.ChannelMessageSend(mc.ChannelID, ("`@" + s.State.User.Username + "#" + s.State.User.Discriminator + "` stop - Stops playing."))
 	if err(e, "Couldn't post message: "+m.Content) {
 		return
 	}
