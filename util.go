@@ -156,6 +156,10 @@ func nextInQueue() {
 	}
 	queueIndex = 0
 	queue = queue[:0]
+	if running {
+		item.Session.UpdateStatus(0, "from Source")
+		return
+	}
 	item.Session.UpdateStatus(0, "")
 	return
 }
