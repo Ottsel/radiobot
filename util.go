@@ -148,20 +148,24 @@ func addToQueue(s *discordgo.Session, g *discordgo.Guild, user *discordgo.User, 
 	return
 }
 func nextInQueue() {
-	if len(queue)-queueIndex >= 1 {
-		q := queue[queueIndex]
-		playSound(q.Session, q.Guild, q.User, q.Source)
-		queueIndex++
+	if skip {
+		if len(queue)-queueIndex >= 1 {
+			q := queue[queueIndex]
+			playSound(q.Session, q.Guild, q.User, q.Source)
+			queueIndex++
+			skip = false
+			return
+		}
+		skip = false
+		queueIndex = 0
+		queue = queue[:0]
+		if running {
+			item.Session.UpdateStatus(0, "from Source")
+			return
+		}
+		item.Session.UpdateStatus(0, "")
 		return
 	}
-	queueIndex = 0
-	queue = queue[:0]
-	if running {
-		item.Session.UpdateStatus(0, "from Source")
-		return
-	}
-	item.Session.UpdateStatus(0, "")
-	return
 }
 func getGuild(s *discordgo.Session, c string) *discordgo.Guild {
 	channel, e := s.State.Channel(c)

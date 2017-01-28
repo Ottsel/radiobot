@@ -31,6 +31,7 @@ var (
 	recv        chan *discordgo.Packet
 	send        chan []int16
 	mu          sync.Mutex
+	skip        bool
 )
 
 // SendPCM will receive on the provied channel encode
@@ -177,8 +178,11 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 	v.Speaking(true)
 
 	// Send not "speaking" packet over the websocket when we finish
-	defer v.Speaking(false)
-	defer nextInQueue()
+	defer func() {
+		v.Speaking(false)
+		skip = true
+		nextInQueue()
+	}()
 
 	// will actually only spawn one instance, a bit hacky.
 	if send == nil {

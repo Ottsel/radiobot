@@ -108,6 +108,7 @@ func messageCreate(s *discordgo.Session, mc *discordgo.MessageCreate) {
 						return
 					case "next":
 						if isConfigured(g, s) {
+							skip = true
 							nextInQueue()
 							return
 						}
