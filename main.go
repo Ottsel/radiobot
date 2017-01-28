@@ -114,6 +114,9 @@ func messageCreate(s *discordgo.Session, mc *discordgo.MessageCreate) {
 						}
 					case "stop":
 						if isConfigured(g, s) {
+							skip = false
+							queueIndex = 0
+							queue = queue[:0]
 							s.UpdateStatus(0, "")
 							KillPlayer()
 							return
@@ -127,15 +130,19 @@ func messageCreate(s *discordgo.Session, mc *discordgo.MessageCreate) {
 						if isConfigured(g, s) {
 							source := getSourceByName(g, strings.ToLower(params[1]))
 							if source != "" {
+								if running {
+									addToQueue(s, g, mc.Author, source)
+									pos := strconv.Itoa(len(queue) - (queueIndex))
+									s.ChannelMessageSend(mc.ChannelID, ("You are position " + pos + " in the queue. (Use the `next` command to skip)"))
+									return
+								}
 								s.UpdateStatus(0, strings.ToTitle(params[1]))
 								playSound(s, g, mc.Author, source)
+								s.ChannelMessageSend(mc.ChannelID, "No cached source by name of: "+strings.ToLower(params[1]))
 								return
 							}
-							s.ChannelMessageSend(mc.ChannelID, "No cached source by name of: "+strings.ToLower(params[1]))
-							return
 						}
 					}
-
 					if mc.ChannelID != cfg.CommandChannelID {
 						e := s.ChannelMessageDelete(mc.ChannelID, mc.ID)
 						if err(e, "Couldn't delete message:"+mc.Content) {
