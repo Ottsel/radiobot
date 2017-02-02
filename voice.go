@@ -180,7 +180,7 @@ func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 	// Send not "speaking" packet over the websocket when we finish
 	defer func() {
 		v.Speaking(false)
-		skip = true
+		running = false
 		nextInQueue()
 	}()
 

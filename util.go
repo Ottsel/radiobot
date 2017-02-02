@@ -153,10 +153,8 @@ func nextInQueue() {
 			q := queue[queueIndex]
 			playSound(q.Session, q.Guild, q.User, q.Source)
 			queueIndex++
-			skip = false
 			return
 		}
-		skip = false
 		queueIndex = 0
 		queue = queue[:0]
 		if running {

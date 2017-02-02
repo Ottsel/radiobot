@@ -108,13 +108,11 @@ func messageCreate(s *discordgo.Session, mc *discordgo.MessageCreate) {
 						return
 					case "next":
 						if isConfigured(g, s) {
-							skip = true
 							nextInQueue()
 							return
 						}
 					case "stop":
 						if isConfigured(g, s) {
-							skip = false
 							queueIndex = 0
 							queue = queue[:0]
 							s.UpdateStatus(0, "")
