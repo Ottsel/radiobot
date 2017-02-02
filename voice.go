@@ -136,7 +136,7 @@ func ReceivePCM(v *discordgo.VoiceConnection, c chan *discordgo.Packet) {
 func PlayAudioFile(v *discordgo.VoiceConnection, source string) {
 
 	// Create a shell command "object" to run.
-	if strings.Contains(source, "youtube.com") {
+	if strings.Contains(source, "youtu") {
 		ytdl := exec.Command("youtube-dl", "--no-cache-dir", "-f", "bestaudio", "-o", "-", source)
 		ytdlout, err := ytdl.StdoutPipe()
 		if err != nil {
