@@ -152,16 +152,15 @@ func nextInQueue() {
 		q := queue[queueIndex]
 		playSound(q.Session, q.Guild, q.User, q.Source)
 		queueIndex++
-		return
+	} else {
+		queueIndex = 0
+		queue = queue[:0]
+		if running {
+			item.Session.UpdateStatus(0, "from Source")
+		} else {
+			item.Session.UpdateStatus(0, "")
+		}
 	}
-	queueIndex = 0
-	queue = queue[:0]
-	if running {
-		item.Session.UpdateStatus(0, "from Source")
-		return
-	}
-	item.Session.UpdateStatus(0, "")
-	return
 }
 func getGuild(s *discordgo.Session, c string) *discordgo.Guild {
 	channel, e := s.State.Channel(c)
